@@ -1,19 +1,17 @@
 [project]
 name = "open-whisper"
-version = "0.1.0"
-description = "Add your description here"
+version = "0.2.0"
+description = "Local Speech-to-Text with Voxtral and MLX"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "fastapi>=0.121.3",
-    "pyautogui>=0.9.54",
-    "pynput>=1.8.1",
-    "pyperclip>=1.11.0",
-    "python-multipart>=0.0.20",
-    "pywebview>=6.1",
-    "rumps>=0.4.0",
-    "sounddevice>=0.5.3",
-    "uvicorn>=0.38.0",
-    "websockets>=15.0.1",
-    "whisper-ctranslate2>=0.5.5",
+    "PySide6>=6.6.0",
+    "mlx-audio>=0.1.1",
+    "sounddevice>=0.4.6",
+    "numpy>=1.24.0",
+    "huggingface_hub>=0.20.0",
+    "librosa>=0.10.0",
+    "soundfile>=0.12.0",
+    "pyperclip>=1.8.2",
+    "soxr>=0.3.5",
 ]
