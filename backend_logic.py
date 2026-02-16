@@ -1,53 +1,49 @@
 import numpy as np
 import sounddevice as sd
-import threading
-import queue
-import time
-import os
 import soundfile as sf
-from mlx_audio.stt.utils import load_model
+import tempfile
+import os
+from faster_whisper import WhisperModel
+
+# Use large-v3-turbo for best speed/quality tradeoff.
+# Runs fully local on CPU with int8 quantization — no cloud, no limits.
+MODEL_SIZE = "large-v3-turbo"
+
 
 class TranscriptionManager:
-    def __init__(self, model_path=".", sample_rate=16000):
-        self.model_path = model_path
+    def __init__(self, sample_rate=16000):
         self.sample_rate = sample_rate
         self.recording = False
         self.audio_data = []
         self.stream = None
-        self.model = None
-        self.transcription_text = ""
         self.volume_level = 0.0
-        self._stop_event = threading.Event()
-
-        # Load model lazily
-        self.model_loaded = False
+        self.model = None
+        self._model_loaded = False
 
     def _ensure_model_loaded(self):
-        if not self.model_loaded:
-            print(f"Loading model from {self.model_path}...")
-            # mlx-audio load can take a local path or repo id.
-            # Since we have files in current dir, we pass current dir.
-            self.model = load_model(self.model_path)
-            self.model_loaded = True
-            print("Model loaded successfully.")
+        if not self._model_loaded:
+            print(f"Loading Whisper model ({MODEL_SIZE})...")
+            self.model = WhisperModel(
+                MODEL_SIZE, device="cpu", compute_type="int8"
+            )
+            self._model_loaded = True
+            print("Model loaded.")
 
     def start_recording(self):
         self.recording = True
         self.audio_data = []
-        self.transcription_text = ""
 
-        def callback(indata, frames, time, status):
+        def callback(indata, frames, time_info, status):
             if status:
                 print(status)
             if self.recording:
                 self.audio_data.append(indata.copy())
-                # Calculate volume level (RMS)
                 self.volume_level = float(np.sqrt(np.mean(indata**2)))
 
         self.stream = sd.InputStream(
             samplerate=self.sample_rate,
             channels=1,
-            callback=callback
+            callback=callback,
         )
         self.stream.start()
 
@@ -59,42 +55,43 @@ class TranscriptionManager:
             self.stream = None
         self.volume_level = 0.0
 
-    def get_audio_buffer(self):
-        if not self.audio_data:
-            return None
-        return np.concatenate(self.audio_data, axis=0)
-
-    def transcribe(self, progress_callback=None):
-        """Runs transcription on the recorded audio."""
-        audio = self.get_audio_buffer()
-        if audio is None or len(audio) == 0:
-            return "No audio recorded."
-
-        try:
-            self._ensure_model_loaded()
-
-            # Save to temporary wav file as mlx-audio's generate often expects a file path
-            # or a numpy array depending on version. The usage said "audio.wav".
-            temp_wav = "temp_recording.wav"
-            sf.write(temp_wav, audio, self.sample_rate)
-
-            print("Starting transcription...")
-            # We use generate in batch mode as requested
-            result = self.model.generate(temp_wav, transcription_delay_ms=480)
-
-            if hasattr(result, 'text'):
-                self.transcription_text = result.text
-            else:
-                self.transcription_text = str(result)
-
-            # Cleanup
-            if os.path.exists(temp_wav):
-                os.remove(temp_wav)
-
-            return self.transcription_text
-        except Exception as e:
-            print(f"Transcription error: {e}")
-            return f"Error: {str(e)}"
-
     def get_volume(self):
         return self.volume_level
+
+    def transcribe_buffer(self):
+        """Transcribe the recorded audio buffer. No length limits."""
+        if not self.audio_data:
+            return "No audio recorded."
+
+        audio = np.concatenate(self.audio_data, axis=0).flatten()
+        duration = len(audio) / self.sample_rate
+        print(f"Recorded {duration:.1f}s of audio")
+
+        # Write to temp file for faster-whisper
+        tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+        try:
+            sf.write(tmp.name, audio, self.sample_rate)
+            return self._transcribe_file(tmp.name)
+        finally:
+            os.unlink(tmp.name)
+
+    def transcribe_file(self, filepath):
+        """Transcribe an uploaded audio file. No length limits."""
+        if not filepath:
+            return "No file provided."
+        return self._transcribe_file(filepath)
+
+    def _transcribe_file(self, filepath):
+        self._ensure_model_loaded()
+        print("Transcribing...")
+        segments, info = self.model.transcribe(
+            filepath,
+            language="en",
+            vad_filter=True,           # skip silence for speed
+            vad_parameters=dict(
+                min_silence_duration_ms=500,
+            ),
+        )
+        text = " ".join(seg.text for seg in segments).strip()
+        print(f"Done. ({info.duration:.1f}s audio → {len(text)} chars)")
+        return text

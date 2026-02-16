@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Open Whisper</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #111; color: #eee; min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 40px 20px; }
+  h1 { font-size: 28px; margin-bottom: 6px; }
+  .subtitle { color: #888; margin-bottom: 40px; font-size: 14px; }
+  .container { display: flex; gap: 40px; width: 100%; max-width: 1000px; flex-wrap: wrap; justify-content: center; }
+  .left { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+  .right { flex: 1; min-width: 300px; display: flex; flex-direction: column; gap: 12px; }
+
+  /* Mic button */
+  .mic-btn { width: 200px; height: 200px; border-radius: 50%; border: none; cursor: pointer; background: #646cff; transition: all 0.2s; position: relative; display: flex; align-items: center; justify-content: center; }
+  .mic-btn:hover { transform: scale(1.05); }
+  .mic-btn.recording { background: #ff4444; animation: pulse 1.5s infinite; }
+  .mic-btn .emoji { font-size: 72px; pointer-events: none; }
+  @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(255,68,68,0.4); } 50% { box-shadow: 0 0 0 20px rgba(255,68,68,0); } }
+
+  .status { color: #888; font-size: 14px; text-align: center; min-height: 20px; }
+  .timer { font-size: 24px; font-variant-numeric: tabular-nums; color: #646cff; min-height: 32px; }
+
+  /* Transcript area */
+  .transcript-label { display: flex; justify-content: space-between; align-items: center; }
+  .transcript-label span { font-weight: 600; }
+  .copy-btn { background: #333; color: #ccc; border: 1px solid #555; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-size: 13px; }
+  .copy-btn:hover { background: #444; }
+  .transcript { background: #1a1a1a; border: 1px solid #333; border-radius: 10px; padding: 20px; min-height: 250px; font-size: 16px; line-height: 1.6; white-space: pre-wrap; overflow-y: auto; max-height: 500px; }
+  .transcript.empty { color: #555; }
+
+  /* Upload area */
+  .upload-area { margin-top: 12px; }
+  .upload-area label { display: inline-block; background: #333; color: #ccc; border: 1px dashed #555; border-radius: 8px; padding: 12px 24px; cursor: pointer; font-size: 14px; }
+  .upload-area label:hover { background: #444; }
+  .upload-area input { display: none; }
+
+  .spinner { display: none; }
+  .spinner.active { display: inline-block; width: 18px; height: 18px; border: 2px solid #555; border-top-color: #646cff; border-radius: 50%; animation: spin 0.6s linear infinite; vertical-align: middle; margin-left: 8px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<h1>Open Whisper</h1>
+<p class="subtitle">Local speech-to-text &mdash; no cloud, no limits</p>
+
+<div class="container">
+  <div class="left">
+    <button class="mic-btn" id="micBtn" onclick="toggleRecording()">
+      <span class="emoji">🎤</span>
+    </button>
+    <div class="timer" id="timer"></div>
+    <div class="status" id="status">Click to start recording</div>
+    <div class="upload-area">
+      <label>📁 Upload audio file<input type="file" id="fileInput" accept="audio/*" onchange="uploadFile(this)"></label>
+    </div>
+  </div>
+
+  <div class="right">
+    <div class="transcript-label">
+      <span>Transcript <span class="spinner" id="spinner"></span></span>
+      <button class="copy-btn" id="copyBtn" onclick="copyText()">Copy</button>
+    </div>
+    <div class="transcript empty" id="transcript">Transcript will appear here...</div>
+  </div>
+</div>
+
+<script>
+let mediaRecorder = null;
+let audioChunks = [];
+let recording = false;
+let startTime = 0;
+let timerInterval = null;
+
+function formatTime(ms) {
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return `${m}:${sec.toString().padStart(2, "0")}`;
+}
+
+async function toggleRecording() {
+  if (!recording) {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorder = new MediaRecorder(stream);
+      audioChunks = [];
+      mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+      mediaRecorder.onstop = () => {
+        stream.getTracks().forEach(t => t.stop());
+        const blob = new Blob(audioChunks, { type: "audio/wav" });
+        sendAudio(blob);
+      };
+      mediaRecorder.start();
+      recording = true;
+      startTime = Date.now();
+      document.getElementById("micBtn").classList.add("recording");
+      document.getElementById("status").textContent = "Recording... click again to stop";
+      timerInterval = setInterval(() => {
+        document.getElementById("timer").textContent = formatTime(Date.now() - startTime);
+      }, 200);
+    } catch (err) {
+      document.getElementById("status").textContent = "Mic access denied. Check browser permissions.";
+    }
+  } else {
+    recording = false;
+    clearInterval(timerInterval);
+    document.getElementById("micBtn").classList.remove("recording");
+    document.getElementById("status").textContent = "Processing...";
+    mediaRecorder.stop();
+  }
+}
+
+function uploadFile(input) {
+  if (input.files.length === 0) return;
+  const file = input.files[0];
+  document.getElementById("status").textContent = `Transcribing ${file.name}...`;
+  sendAudio(file);
+  input.value = "";
+}
+
+async function sendAudio(blob) {
+  document.getElementById("spinner").classList.add("active");
+  const form = new FormData();
+  form.append("audio", blob, "recording.wav");
+  try {
+    const res = await fetch("/transcribe", { method: "POST", body: form });
+    const data = await res.json();
+    if (data.error) {
+      document.getElementById("transcript").textContent = "Error: " + data.error;
+    } else {
+      document.getElementById("transcript").textContent = data.text || "(empty transcript)";
+      document.getElementById("transcript").classList.remove("empty");
+    }
+    document.getElementById("status").textContent = "Done. Click to record again.";
+  } catch (err) {
+    document.getElementById("transcript").textContent = "Error: " + err.message;
+    document.getElementById("status").textContent = "Error during transcription.";
+  }
+  document.getElementById("spinner").classList.remove("active");
+}
+
+function copyText() {
+  const text = document.getElementById("transcript").textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.getElementById("copyBtn");
+    btn.textContent = "Copied!";
+    setTimeout(() => btn.textContent = "Copy", 2000);
+  });
+}
+</script>
+</body>
+</html>

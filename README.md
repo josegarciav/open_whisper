@@ -17,18 +17,6 @@ A native macOS application for long-form speech-to-text transcription using the 
 - Python 3.11+
 - `uv` (for dependency management)
 
-## Setup
-
-1. **Install Dependencies**:
-   ```bash
-   uv sync
-   ```
-
-2. **Model Files**:
-   The app expects `model.safetensors`, `config.json`, and `tekken.json` to be in the root directory.
-   - You should already have `model.safetensors` (8GB+).
-   - Metadata files (`config.json`, `tekken.json`) have been automatically downloaded.
-
 ## Usage
 
 Run the app using the provided start script:
