@@ -25,6 +25,7 @@ Run the app using the provided start script:
 ```
 
 ### Instructions:
+
 1. Click the large **🎤** button to start recording.
 2. Watch the green bars react to your voice volume.
 3. Click the button again to stop recording.
@@ -35,8 +36,10 @@ Run the app using the provided start script:
 ## Packaging as a .app Bundle
 
 To create a standalone macOS application:
+
 ```bash
 uv pip install py2app
 python setup.py py2app
 ```
+
 The application will be located in the `dist/` folder.

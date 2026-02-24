@@ -28,8 +28,10 @@
   .transcript-label span { font-weight: 600; }
   .copy-btn { background: #333; color: #ccc; border: 1px solid #555; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-size: 13px; }
   .copy-btn:hover { background: #444; }
-  .transcript { background: #1a1a1a; border: 1px solid #333; border-radius: 10px; padding: 20px; min-height: 250px; font-size: 16px; line-height: 1.6; white-space: pre-wrap; overflow-y: auto; max-height: 500px; }
+  .transcript { background: #1a1a1a; border: 1px solid #333; border-radius: 10px; padding: 20px; min-height: 250px; font-size: 16px; line-height: 1.6; white-space: pre-wrap; overflow-y: auto; max-height: 500px; outline: none; }
   .transcript.empty { color: #555; }
+  .transcript[contenteditable="true"] { border-color: #646cff; cursor: text; }
+  .transcript[contenteditable="true"]:focus { box-shadow: 0 0 0 2px rgba(100,108,255,0.3); }
 
   /* Upload area */
   .upload-area { margin-top: 12px; }
@@ -99,6 +101,10 @@ async function toggleRecording() {
       startTime = Date.now();
       document.getElementById("micBtn").classList.add("recording");
       document.getElementById("status").textContent = "Recording... click again to stop";
+      const t = document.getElementById("transcript");
+      t.contentEditable = "false";
+      t.textContent = "Transcript will appear here...";
+      t.classList.add("empty");
       timerInterval = setInterval(() => {
         document.getElementById("timer").textContent = formatTime(Date.now() - startTime);
       }, 200);
@@ -129,22 +135,28 @@ async function sendAudio(blob) {
   try {
     const res = await fetch("/transcribe", { method: "POST", body: form });
     const data = await res.json();
+    const transcript = document.getElementById("transcript");
     if (data.error) {
-      document.getElementById("transcript").textContent = "Error: " + data.error;
+      transcript.textContent = "Error: " + data.error;
+      transcript.contentEditable = "false";
     } else {
-      document.getElementById("transcript").textContent = data.text || "(empty transcript)";
-      document.getElementById("transcript").classList.remove("empty");
+      transcript.textContent = data.text || "(empty transcript)";
+      transcript.classList.remove("empty");
+      transcript.contentEditable = "true";
+      transcript.focus();
     }
     document.getElementById("status").textContent = "Done. Click to record again.";
   } catch (err) {
-    document.getElementById("transcript").textContent = "Error: " + err.message;
+    const transcript = document.getElementById("transcript");
+    transcript.textContent = "Error: " + err.message;
+    transcript.contentEditable = "false";
     document.getElementById("status").textContent = "Error during transcription.";
   }
   document.getElementById("spinner").classList.remove("active");
 }
 
 function copyText() {
-  const text = document.getElementById("transcript").textContent;
+  const text = document.getElementById("transcript").innerText;
   navigator.clipboard.writeText(text).then(() => {
     const btn = document.getElementById("copyBtn");
     btn.textContent = "Copied!";
